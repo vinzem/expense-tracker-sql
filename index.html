@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Expense Tracker</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 30px auto; padding: 0 15px; color: #222; }
+    h1 { margin-bottom: 5px; }
+    form { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
+    input, select, button { padding: 8px; font-size: 14px; }
+    input[name="description"] { flex: 1; min-width: 160px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border-bottom: 1px solid #ddd; padding: 8px; text-align: left; }
+    td.amount, th.amount { text-align: right; }
+    .total { font-size: 18px; margin: 10px 0; }
+    .error { color: #b00020; }
+    .del { cursor: pointer; color: #b00020; background: none; border: none; }
+  </style>
+</head>
+<body>
+  <h1>Expense Tracker</h1>
+  <div class="total">Total spent: <strong id="total">0.00</strong></div>
+
+  <form id="form">
+    <input type="number" name="amount" step="0.01" min="0.01" placeholder="Amount" required>
+    <select name="category_id" id="category" required></select>
+    <input type="text" name="description" placeholder="Description" maxlength="255">
+    <input type="date" name="expense_date" required>
+    <button type="submit">Add</button>
+  </form>
+  <div id="error" class="error"></div>
+
+  <h3>By category</h3>
+  <table id="summary"><tbody></tbody></table>
+
+  <h3>All expenses</h3>
+  <table id="expenses">
+    <thead>
+      <tr><th>Date</th><th>Category</th><th>Description</th><th class="amount">Amount</th><th></th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    const form = document.getElementById('form');
+    const errorBox = document.getElementById('error');
+    form.expense_date.value = new Date().toISOString().slice(0, 10);
+
+    const money = n => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    function cell(text, className) {
+      const td = document.createElement('td');
+      td.textContent = text;
+      if (className) td.className = className;
+      return td;
+    }
+
+    async function loadCategories() {
+      const cats = await (await fetch('/api/categories')).json();
+      const select = document.getElementById('category');
+      cats.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.category_id;
+        opt.textContent = c.name;
+        select.appendChild(opt);
+      });
+    }
+
+    async function loadExpenses() {
+      const rows = await (await fetch('/api/expenses')).json();
+      const tbody = document.querySelector('#expenses tbody');
+      tbody.innerHTML = '';
+      let total = 0;
+      rows.forEach(r => {
+        total += Number(r.amount);
+        const tr = document.createElement('tr');
+        tr.append(cell(r.expense_date), cell(r.category), cell(r.description), cell(money(r.amount), 'amount'));
+        const td = document.createElement('td');
+        const btn = document.createElement('button');
+        btn.className = 'del';
+        btn.textContent = 'Delete';
+        btn.onclick = async () => {
+          await fetch('/api/expenses/' + r.expense_id, { method: 'DELETE' });
+          refresh();
+        };
+        td.appendChild(btn);
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      });
+      document.getElementById('total').textContent = money(total);
+    }
+
+    async function loadSummary() {
+      const rows = await (await fetch('/api/summary')).json();
+      const tbody = document.querySelector('#summary tbody');
+      tbody.innerHTML = '';
+      rows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.append(cell(r.category), cell(money(r.total), 'amount'));
+        tbody.appendChild(tr);
+      });
+    }
+
+    function refresh() { loadExpenses(); loadSummary(); }
+
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      errorBox.textContent = '';
+      const data = Object.fromEntries(new FormData(form));
+      const res = await fetch('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!res.ok) {
+        errorBox.textContent = (await res.json()).error || 'Something went wrong.';
+        return;
+      }
+      form.amount.value = '';
+      form.description.value = '';
+      refresh();
+    });
+
+    loadCategories();
+    refresh();
+  </script>
+</body>
+</html>
